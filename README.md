@@ -1,39 +1,76 @@
-## Advanced Lane Finding
-[![Udacity - Self-Driving Car NanoDegree](https://s3.amazonaws.com/udacity-sdc/github/shield-carnd.svg)](http://www.udacity.com/drive)
-![Lanes Image](./examples/example_output.jpg)
+Advanced Lane detection
+Writeup Ricardo Rambal
+Finding Lane Lines on the Road
 
-In this project, your goal is to write a software pipeline to identify the lane boundaries in a video, but the main output or product we want you to create is a detailed writeup of the project.  Check out the [writeup template](https://github.com/udacity/CarND-Advanced-Lane-Lines/blob/master/writeup_template.md) for this project and use it as a starting point for creating your own writeup.  
+Make a pipeline that finds lane lines on the road.
+Reflection
+0. Pre-pipeline.
+Get the data set (camera_cal) to calibrate the cameras and find the camera matrix and distortion coefficients, will be used in each frame of the video input. as this camera doesn't change trough out the video, there is no need to place it into the pipeline
+def calibrate(images):
 
-Creating a great writeup:
----
-A great writeup should include the rubric points as well as your description of how you addressed each point.  You should include a detailed description of the code used in each step (with line-number references and code snippets where necessary), and links to other supporting documents or external references.  You should include images in your writeup to demonstrate how your code works with examples.  
+    # prepare object points, like (0,0,0), (1,0,0), (2,0,0) ....,(6,5,0)
+    objp = np.zeros((6*9,3), np.float32)
+    objp[:,:2] = np.mgrid[0:9,0:6].T.reshape(-1,2)
 
-All that said, please be concise!  We're not looking for you to write a book here, just a brief description of how you passed each rubric point, and references to the relevant code :). 
+    # Arrays to store object points and image points from all the images.
+    objpoints = [] # 3d points in real world space
+    imgpoints = [] # 2d points in image plane.
 
-You're not required to use markdown for your writeup.  If you use another method please just submit a pdf of your writeup.
+    # Make a list of calibration images
+    images = glob.glob(images)
 
-The Project
----
+    # Step through the list and search for chessboard corners
+    for fname in images:
+        img = cv2.imread(fname)
+        gray = cv2.cvtColor(img,cv2.COLOR_BGR2GRAY)
+        # Find the chessboard corners
+        ret, corners = cv2.findChessboardCorners(gray, (9,6),None)
+        # If found, add object points, image points
+        if ret == True:
+            objpoints.append(objp)
+            imgpoints.append(corners)
+            img = cv2.drawChessboardCorners(img, (9,6), corners, ret)
+            ret, mtx, dist, rvecs, tvecs = cv2.calibrateCamera(objpoints, imgpoints, gray.shape[::-1], None, None)
+            #Extract Numbers to calibrate 
 
-The goals / steps of this project are the following:
+    return ret, mtx, dist, rvecs, tvecs
+1. Describe your pipeline pipeline.ipby, this proccess is better shown at playgorund.ipynb
+read the frame and apply a undistort to conpensate for the camera distortion using the returns from previews step.
+alt text
 
-* Compute the camera calibration matrix and distortion coefficients given a set of chessboard images.
-* Apply a distortion correction to raw images.
-* Use color transforms, gradients, etc., to create a thresholded binary image.
-* Apply a perspective transform to rectify binary image ("birds-eye view").
-* Detect lane pixels and fit to find the lane boundary.
-* Determine the curvature of the lane and vehicle position with respect to center.
-* Warp the detected lane boundaries back onto the original image.
-* Output visual display of the lane boundaries and numerical estimation of lane curvature and vehicle position.
+warp flatten this image to presive better the line curvatures
+apply tresholding including gaussian to start filtering the images
+apply sobel to filter out the non vertical consecutive dots
+apply color channel transform HSL and filter by Saturation, this helps getting a better result finding yellow and white lanes
+alt text
 
-The images for camera calibration are stored in the folder called `camera_cal`.  The images in `test_images` are for testing your pipeline on single frames.  If you want to extract more test images from the videos, you can simply use an image writing method like `cv2.imwrite()`, i.e., you can read the video in frame by frame as usual, and for frames you want to save for later you can write to an image file.  
+divide on 2 arrays the image left and right half to find the lanes by applying polyfits, after
+make windows of selection pixels around the polyfit to evaluate the next polyfit, leaving out multiple noise pixels and sudden changes
+draw the lanes
+alt text
 
-To help the reviewer examine your work, please save examples of the output from each stage of your pipeline in the folder called `output_images`, and include a description in your writeup for the project of what each image shows.    The video called `project_video.mp4` is the video your pipeline should work well on.  
+use the lines to calculate the radius and set it into a meter format by mapping the ratio meters to pixels
+use the bottom points of both lines and the middle point of the image to calculate the distance between the center of the car and the center of the lane
+alt text
 
-The `challenge_video.mp4` video is an extra (and optional) challenge for you if you want to test your pipeline under somewhat trickier conditions.  The `harder_challenge.mp4` video is another optional challenge and is brutal!
+unwarp image into calibrated form and add upp the result and the main undistorted image
+place the text on top of each final consolidated frame.
+    dst = undistort(image, mtx, dist) #1.
+    binary_warped = wraping(dst) #2.
+    gobeled = detection(binary_warped) #3, 4, 5
+    out_img = fit_polynomial(gobeled) #6, 7 
+    result, left_curverad, right_curverad, average_km, offset = search_around_poly(gobeled) #7, 8, 9 and 10
+    consolidated = cv2.addWeighted(unwraping(result), 0.8, dst, 1, 0) #11
+    
+    #12
+    cv2.putText(consolidated,'{}{}'.format("%.4f"%average_km, " Km Curve R"),(100,100), font, 1,(255,255,255),2,cv2.LINE_AA)
+    cv2.putText(consolidated,'{}{}'.format("%.3f"%offset," m distance to lane's center"),(100,150), font, 0.5,(255,255,255),2,cv2.LINE_AA)    
+    plt.imshow(consolidated)
+3. shortcomings
+There is a lot of more work to be done filtering the lane detection the goal would be to make it more stable. shadows and high contrast pavment changes are still unsolved by my code also crossing lane cars.
 
-If you're feeling ambitious (again, totally optional though), don't stop there!  We encourage you to go out and take video of your own, calibrate your camera and show us how you would implement this project from scratch!
+3. Possible improvements
+maybe more mixture of channels filtering, also i would like to try and tell the program to only allow coherent changes regarding the previews results applaying some kind of region masking, the problem would be when lane crossing?.
 
-## How to write a README
-A well written README file can enhance your project and portfolio.  Develop your abilities to create professional README files by completing [this free course](https://www.udacity.com/course/writing-readmes--ud777).
-
+Special thanks
+To David Cardozo, also member of this group of students who explained me some more sofisticated forms of filtering and tresholding.
